@@ -11,7 +11,7 @@ env = gym.make("CartPole-v1", render_mode=None)
 OBS_DIM = env.observation_space.shape[0]  # type: ignore
 ACT_DIM = env.action_space.n  # type: ignore
 HIDDEN_DIM = 8
-EPISODE_NUM = 3500
+EPISODE_NUM = 5000
 DISCOUNT = 0.99
 
 
@@ -82,7 +82,7 @@ for episode in range(EPISODE_NUM):
     for t in reversed(range(len(rewards_lst))):
         running_return = rewards_lst[t] + DISCOUNT * running_return
         returns[t] = running_return
-    advantage_lst = returns - torch.stack(state_value_lst)
+    advantage_lst = returns - torch.cat(state_value_lst, dim=-1)
     policy_loss = -torch.mean(advantage_lst.detach() * torch.stack(log_probs_lst))
     episode_rewards.append(torch.sum(rewards_lst).item())
     policy_loss.backward()
