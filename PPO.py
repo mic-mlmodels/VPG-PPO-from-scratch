@@ -106,24 +106,24 @@ for episode in range(EPISODE_NUM):
     old_advantage_lst = (old_advantage_lst - old_advantage_lst.mean()) / (
         old_advantage_lst.std() + 1e-8
     )
+    old_states_lst = torch.stack(old_states_lst).to(device)
+    old_actions_lst = torch.stack(old_actions_lst)
+    old_log_probs_lst = torch.stack(old_log_probs_lst)
     for i in range(NEW_POLICY_LOOPS):
         policy_optimiser.zero_grad()
         value_optimiser.zero_grad()
-        new_action_logits = policy_v0(torch.stack(old_states_lst).to(device))
+        new_action_logits = policy_v0(old_states_lst)
         new_action_probs = F.softmax(new_action_logits, dim=-1)
         new_action_distributions = torch.distributions.Categorical(
             probs=new_action_probs
         )
 
-        new_log_probs_lst = new_action_distributions.log_prob(
-            torch.stack(old_actions_lst)
-        )
+        new_log_probs_lst = new_action_distributions.log_prob(old_actions_lst)
         policy_loss = -torch.mean(
             torch.minimum(
-                torch.exp(new_log_probs_lst - torch.stack(old_log_probs_lst))
-                * old_advantage_lst,
+                torch.exp(new_log_probs_lst - old_log_probs_lst) * old_advantage_lst,
                 torch.clip(
-                    torch.exp(new_log_probs_lst - torch.stack(old_log_probs_lst)),
+                    torch.exp(new_log_probs_lst - old_log_probs_lst),
                     1 - EPSILON,
                     1 + EPSILON,
                 )
@@ -131,7 +131,7 @@ for episode in range(EPISODE_NUM):
             )
         )
         policy_loss.backward()
-        new_state_value_lst = value_v0(torch.stack(old_states_lst).to(device)).squeeze()
+        new_state_value_lst = value_v0(old_states_lst).squeeze()
         value_loss = torch.mean((new_state_value_lst - old_returns_lst) ** 2)
         value_loss.backward()
         policy_optimiser.step()
