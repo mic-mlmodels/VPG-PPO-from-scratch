@@ -103,6 +103,9 @@ for episode in range(EPISODE_NUM):
     old_returns_lst = torch.cat(old_returns_lst, dim=0)
     old_state_value_lst = torch.cat(old_state_value_lst, dim=-1)
     old_advantage_lst = old_returns_lst - old_state_value_lst
+    old_advantage_lst = (old_advantage_lst - old_advantage_lst.mean()) / (
+        old_advantage_lst.std() + 1e-8
+    )
     for i in range(NEW_POLICY_LOOPS):
         policy_optimiser.zero_grad()
         value_optimiser.zero_grad()
