@@ -11,11 +11,11 @@ env = gym.make("CartPole-v1", render_mode=None)
 OBS_DIM = env.observation_space.shape[0]  # type: ignore
 ACT_DIM = env.action_space.n  # type: ignore
 HIDDEN_DIM = 64
-EPISODE_NUM = 300
+EPISODE_NUM = 1000
 DISCOUNT = 0.99
 EPSILON = 0.2
 OLD_POLICY_LOOPS = 4
-NEW_POLICY_LOOPS = 4
+NEW_POLICY_LOOPS = 8
 
 
 class PolicyNN(nn.Module):
@@ -128,7 +128,7 @@ for episode in range(EPISODE_NUM):
             )
         )
         policy_loss.backward()
-        new_state_value_lst = value_v0(torch.stack(old_states_lst).to(device))
+        new_state_value_lst = value_v0(torch.stack(old_states_lst).to(device)).squeeze()
         value_loss = torch.mean((new_state_value_lst - old_returns_lst) ** 2)
         value_loss.backward()
         policy_optimiser.step()
@@ -159,3 +159,6 @@ while not (done or truncated):
     time.sleep(0.05)
 
 env.close()
+
+# %%
+# save
