@@ -11,9 +11,10 @@ env = gym.make("CartPole-v1", render_mode=None)
 OBS_DIM = env.observation_space.shape[0]  # type: ignore
 ACT_DIM = env.action_space.n  # type: ignore
 HIDDEN_DIM = 64
-EPISODE_NUM = 5000
+EPISODE_NUM = 300
 DISCOUNT = 0.99
 EPSILON = 0.2
+OLD_POLICY_LOOPS = 4
 
 
 class PolicyNN(nn.Module):
@@ -50,69 +51,72 @@ value_optimiser = torch.optim.AdamW(lr=3e-4, params=value_v0.parameters())
 episode_rewards = []
 mean_rewards = []
 for episode in range(EPISODE_NUM):
+    if episode % 100 == 0:
+        print(episode)
     old_policy_v0.load_state_dict(policy_v0.state_dict())
     for param in old_policy_v0.parameters():
         param.requires_grad = False
     policy_optimiser.zero_grad()
     value_optimiser.zero_grad()
-    old_states_lst = []
-    old_actions_lst = []
-    old_rewards_lst = []
-    old_log_probs_lst = []
-    old_future_rewards_lst = []
-    old_state_value_lst = []
-    old_np_state, info = env.reset()
-    if episode % 100 == 0:
-        print(episode)
-    while True:
-        old_torch_state = torch.as_tensor(old_np_state, dtype=torch.float32)
-        old_states_lst.append(old_torch_state)
-        old_state_value = value_v0(old_torch_state.to(device))
-        old_state_value_lst.append(old_state_value)
-        old_action_logits = policy_v0(old_torch_state.to(device))
-        old_action_probs = F.softmax(old_action_logits, dim=-1)
-        old_action_distribution = torch.distributions.Categorical(
-            probs=old_action_probs
-        )
-        old_selected_action = old_action_distribution.sample()
-        old_scalar_action = old_selected_action.item()
-        old_log_probs = old_action_distribution.log_prob(old_selected_action)
-        old_log_probs_lst.append(old_log_probs)
-        old_actions_lst.append(old_selected_action)
-        old_np_state, old_reward, old_terminated, old_truncated, old_info = env.step(
-            old_scalar_action
-        )
-        old_rewards_lst.append(old_reward)
-        if old_truncated or old_terminated:
-            break
-    old_rewards_lst = torch.tensor(old_rewards_lst, dtype=torch.float32, device=device)
-    old_returns = torch.zeros_like(old_rewards_lst, device=device)
-    old_running_return = 0
-    for t in reversed(range(len(old_rewards_lst))):
-        old_running_return = old_rewards_lst[t] + DISCOUNT * old_running_return
-        old_returns[t] = old_running_return
+    with torch.no_grad():
+        old_states_lst = []
+        old_actions_lst = []
+        old_log_probs_lst = []
+        old_state_value_lst = []
+        old_advantage_lst = []
+        old_returns_lst = []
+        for i in range(OLD_POLICY_LOOPS):
+            old_np_state, info = env.reset()
+            old_rewards_lst = []
+            while True:
+                old_torch_state = torch.as_tensor(old_np_state, dtype=torch.float32)
+                old_states_lst.append(old_torch_state)
+                old_state_value = value_v0(old_torch_state.to(device))
+                old_state_value_lst.append(old_state_value)
+                old_action_logits = policy_v0(old_torch_state.to(device))
+                old_action_probs = F.softmax(old_action_logits, dim=-1)
+                old_action_distribution = torch.distributions.Categorical(
+                    probs=old_action_probs
+                )
+                old_selected_action = old_action_distribution.sample()
+                old_scalar_action = old_selected_action.item()
+                old_log_probs = old_action_distribution.log_prob(old_selected_action)
+                old_log_probs_lst.append(old_log_probs)
+                old_actions_lst.append(old_selected_action)
+                old_np_state, old_reward, old_terminated, old_truncated, old_info = (
+                    env.step(old_scalar_action)
+                )
+                old_rewards_lst.append(old_reward)
+                if old_truncated or old_terminated:
+                    break
+            old_rewards_tensor = torch.tensor(
+                old_rewards_lst, dtype=torch.float32, device=device
+            )
+            old_returns = torch.zeros_like(old_rewards_tensor, device=device)
+            old_running_return = 0
+            for t in reversed(range(len(old_rewards_lst))):
+                old_running_return = old_rewards_lst[t] + DISCOUNT * old_running_return
+                old_returns[t] = old_running_return
+            old_returns_lst.append(old_returns)
 
-    old_advantage_lst = old_returns - torch.cat(old_state_value_lst, dim=-1)
-    new_action_logits = policy_v0(
-        torch.stack(old_states_lst).to(device).unsqueeze(0).repeat(4, 1, 1)
+    old_advantage_lst = torch.cat(old_returns_lst, dim=0) - torch.cat(
+        old_state_value_lst, dim=-1
     )
+    new_action_logits = policy_v0(torch.stack(old_states_lst).to(device))
     new_action_probs = F.softmax(new_action_logits, dim=-1)
-    print(new_action_probs.shape)
     new_action_distributions = torch.distributions.Categorical(probs=new_action_probs)
 
-    new_log_probs_lst = new_action_distributions.log_prob(
-        torch.stack(old_actions_lst).repeat(4)
-    )
+    new_log_probs_lst = new_action_distributions.log_prob(torch.stack(old_actions_lst))
     policy_loss = torch.minimum(
-        torch.exp(new_log_probs_lst - old_log_probs_lst) * old_advantage_lst,
+        torch.exp(new_log_probs_lst - torch.stack(old_log_probs_lst))
+        * old_advantage_lst,
         torch.clip(
-            torch.exp(new_log_probs_lst - old_log_probs_lst), 1 - EPSILON, 1 + EPSILON
+            torch.exp(new_log_probs_lst - torch.stack(old_log_probs_lst)),
+            1 - EPSILON,
+            1 + EPSILON,
         )
         * old_advantage_lst,
     )
-    print(policy_loss)
-
-
 for i in range(EPISODE_NUM // 50):
     mean_rewards.append(np.mean(episode_rewards[i * 50 : (i + 1) * 50]))
 print(mean_rewards)
