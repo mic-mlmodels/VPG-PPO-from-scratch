@@ -64,6 +64,7 @@ for episode in range(EPISODE_NUM):
         old_state_value_lst = []
         old_advantage_lst = []
         old_returns_lst = []
+        old_temp_total_rewards = 0
         for i in range(OLD_POLICY_LOOPS):
             old_np_state, info = env.reset()
             old_rewards_lst = []
@@ -85,6 +86,7 @@ for episode in range(EPISODE_NUM):
                 old_np_state, old_reward, old_terminated, old_truncated, old_info = (
                     env.step(old_scalar_action)
                 )
+                old_temp_total_rewards += 1
                 old_rewards_lst.append(old_reward)
                 if old_truncated or old_terminated:
                     break
@@ -97,12 +99,13 @@ for episode in range(EPISODE_NUM):
                 old_running_return = old_rewards_lst[t] + DISCOUNT * old_running_return
                 old_returns[t] = old_running_return
             old_returns_lst.append(old_returns)
+    episode_rewards.append(old_temp_total_rewards / OLD_POLICY_LOOPS)
     old_returns_lst = torch.cat(old_returns_lst, dim=0)
     old_state_value_lst = torch.cat(old_state_value_lst, dim=-1)
+    old_advantage_lst = old_returns_lst - old_state_value_lst
     for i in range(NEW_POLICY_LOOPS):
         policy_optimiser.zero_grad()
         value_optimiser.zero_grad()
-        old_advantage_lst = old_returns_lst - old_state_value_lst
         new_action_logits = policy_v0(torch.stack(old_states_lst).to(device))
         new_action_probs = F.softmax(new_action_logits, dim=-1)
         new_action_distributions = torch.distributions.Categorical(
