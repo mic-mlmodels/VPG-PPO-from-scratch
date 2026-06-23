@@ -115,7 +115,7 @@ for episode in range(EPISODE_NUM):
         new_log_probs_lst = new_action_distributions.log_prob(
             torch.stack(old_actions_lst)
         )
-        policy_loss = torch.mean(
+        policy_loss = -torch.mean(
             torch.minimum(
                 torch.exp(new_log_probs_lst - torch.stack(old_log_probs_lst))
                 * old_advantage_lst,
