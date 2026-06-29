@@ -73,7 +73,7 @@ for episode in range(EPISODE_NUM):
                 old_states_lst.append(old_torch_state)
                 old_state_value = value_v0(old_torch_state.to(device))
                 old_state_value_lst.append(old_state_value)
-                old_action_logits = policy_v0(old_torch_state.to(device))
+                old_action_logits = old_policy_v0(old_torch_state.to(device))
                 old_action_probs = F.softmax(old_action_logits, dim=-1)
                 old_action_distribution = torch.distributions.Categorical(
                     probs=old_action_probs
@@ -86,7 +86,7 @@ for episode in range(EPISODE_NUM):
                 old_np_state, old_reward, old_terminated, old_truncated, old_info = (
                     env.step(old_scalar_action)
                 )
-                old_temp_total_rewards += 1
+                old_temp_total_rewards += old_reward  # type: ignore
                 old_rewards_lst.append(old_reward)
                 if old_truncated or old_terminated:
                     break
@@ -162,6 +162,3 @@ while not (done or truncated):
     time.sleep(0.05)
 
 env.close()
-
-# %%
-# save
